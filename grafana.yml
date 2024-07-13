@@ -1,0 +1,35 @@
+---
+- name: Deploy Grafana in Container
+  hosts: my_servers
+  vars:
+    grafana_image: "docker.io/grafana/grafana"
+    grafana_container_name: "grafana"
+    grafana_data: "/var/lib/grafana"
+    grafana_base: "/tmp/grafana"
+    grafana_ports: "3004:3000"
+    grafana_env:
+      GF_SECURITY_ADMIN_USER: "redhat"
+      GF_SECURITY_ADMIN_PASSWORD: "redhat"
+
+  tasks:
+    - name: create the direcotry /tmp/grafana
+      file:
+        path: /tmp/grafana
+        state: directory
+
+    - name: Pull Grafana image
+      containers.podman.podman_image:
+        name: "{{ grafana_image }}"
+        tag: "latest"
+
+    - name: Run Grafana container
+      containers.podman.podman_container:
+        name: "{{ grafana_container_name }}"
+        image: "{{ grafana_image }}"
+        state: started
+        ports:
+          - "{{ grafana_ports }}"
+        env:
+          "{{ grafana_env | to_json }}"  # Convert dictionary to JSON format
+        volumes:
+          - "{{ grafana_base }}:{{ grafana_data }}"
