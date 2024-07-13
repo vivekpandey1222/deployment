@@ -1,0 +1,59 @@
+---
+- name: Deploy Prometheus in Container
+  hosts: my_servers
+  vars:
+    prometheus_image: "docker.io/prom/prometheus"
+    prometheus_container_name: "prometheus"
+    prometheus_data: "/prometheus"
+    prometheus_base: "/tmp/prometheus"
+    prometheus_container_path: "/etc/prometheus/prometheus.yml"
+    prometheus_ports: "9092:9090"
+    prometheus_conf_content: |
+      global:
+        scrape_interval: 5s
+        external_labels:
+          monitor: 'node'
+      
+      scrape_configs:
+        - job_name: 'prometheus'
+          static_configs:
+            - targets: ['192.168.122.1:9091']
+        - job_name: 'haproxy-exporter'
+          static_configs:
+            - targets: ['192.168.122.1:9103']
+        - job_name: 'tomcat'
+          static_configs:
+            - targets: ['192.168.122.1:9999']
+        - job_name: 'tomcat1'
+          static_configs:
+            - targets: ['192.168.122.1:9998']
+    prometheus_conf_dest: "/tmp/prometheus.yml"
+
+  tasks:
+        
+    - name: create the direcotry /tmp/prometheus
+      file:
+        path: /tmp/prometheus/
+        state: directory
+        mode: '0777'
+
+    - name: create the config file /tmp/prometheus
+      copy:
+        content: "{{ prometheus_conf_content }}"
+        dest: "{{ prometheus_conf_dest }}"
+        
+    - name: Pull Prometheus image
+      containers.podman.podman_image:
+        name: "{{ prometheus_image }}"
+        tag: "latest"
+
+    - name: Run Prometheus container
+      containers.podman.podman_container:
+        name: "{{ prometheus_container_name }}"
+        image: "{{ prometheus_image }}"
+        state: started
+        ports:
+          - "{{ prometheus_ports }}"
+        volumes:
+          - "{{ prometheus_conf_dest }}:{{ prometheus_container_path }}"
+          - "{{ prometheus_base }}:{{ prometheus_data }}"
