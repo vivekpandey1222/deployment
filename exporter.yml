@@ -15,6 +15,8 @@
       containers.podman.podman_image:
         name: "{{ haproxy_exporter_image }}"
         tag: "latest"
+      tags:
+        - pull_image
 
     - name: "Run the haproxy-exporter container"
       containers.podman.podman_container:
@@ -24,20 +26,37 @@
         ports: "{{ exporter_ports }}"
         command:
           - "--haproxy.scrape-uri={{ haproxy_scrape_uri }}"
+      tags:
+        - run_container
 
-    - name: Verify haproxy and haproxy-exporter containers are running
+    - name: Verify HAProxy-exporter container is running
       command: podman ps --filter "{{ haproxy_status_filter }}" --format "{{'{{.Status}}'}}"
       register: container_status
+      tags:
+        - verify_container
 
     - name: Debug container status
       debug:
         var: container_status.stdout
 
-    - name: Print haproxy and haproxy-exporter container logs for debugging
+    - name: Print HAProxy-exporter container logs for debugging
       command: podman logs {{ exporter_name }}
       register: haproxy_logs
       ignore_errors: yes
 
-    - name: Debug haproxy and haproxy-exporter logs
+    - name: Debug HAProxy-exporter logs
       debug:
         var: haproxy_logs.stdout
+
+    - name: Verify HAProxy-exporter metrics endpoint is accessible
+      command: curl -I http://localhost:9103/metrics
+      register: exporter_metrics
+      ignore_errors: yes
+      tags:
+        - verify_metrics
+
+    - name: Debug HAProxy-exporter metrics access
+      debug:
+        var: exporter_metrics.stdout
+      tags:
+        - debug
