@@ -12,15 +12,20 @@
       GF_SECURITY_ADMIN_PASSWORD: "redhat"
 
   tasks:
-    - name: create the direcotry /tmp/grafana
+    - name: Create the directory /tmp/grafana
       file:
         path: /tmp/grafana
         state: directory
+        mode: '0777'
+      tags:
+        - create_directory
 
     - name: Pull Grafana image
       containers.podman.podman_image:
         name: "{{ grafana_image }}"
         tag: "latest"
+      tags:
+        - pull_image
 
     - name: Run Grafana container
       containers.podman.podman_container:
@@ -33,3 +38,18 @@
           "{{ grafana_env | to_json }}"  # Convert dictionary to JSON format
         volumes:
           - "{{ grafana_base }}:{{ grafana_data }}"
+      tags:
+        - run_container
+
+    - name: Verify Grafana container is running
+      command: podman ps --filter "name={{ grafana_container_name }}" --format "{{'{{.Status}}'}}"
+      register: container_status
+      tags:
+        - verify_container
+
+    - name: Verify Grafana availability with curl
+      command: curl -I http://localhost:3004/login
+      register: grafana_response
+      ignore_errors: yes
+      tags:
+        - verify_grafana
