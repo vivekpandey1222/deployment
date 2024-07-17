@@ -48,7 +48,7 @@
         - verify_container
 
     - name: Verify Grafana availability with curl
-      command: curl -I http://localhost:3004/login
+      command: curl http://localhost:3004/login
       register: grafana_response
       ignore_errors: yes
       tags:
