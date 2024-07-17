@@ -41,12 +41,14 @@
       containers.podman.podman_image:
         name: "{{ haproxy_image }}"
         tag: "latest"
-        
+      tags: pull_image
+
     - name: Create haproxy.cfg file 
       copy:
         content: "{{ haproxy_cfg_content }}"
         dest: "{{ haproxy_dest }}"
         mode: '0755'
+      tags: create_config
 
     - name: "Run the haproxy container"
       containers.podman.podman_container:
@@ -56,20 +58,47 @@
         ports: "{{ ports }}"
         volumes:
           - "{{ haproxy_base_file }}:{{ haproxy_container_path }}"
+      tags: run_container
 
-    - name: Verify haproxy containers are running
+    - name: Verify HAProxy container is running
       command: podman ps --filter "{{ haproxy_status_filter }}" --format "{{'{{.Status}}'}}"
       register: container_status
+      tags: verify_container
 
     - name: Debug container status
       debug:
         var: container_status.stdout
+      tags: debug
 
-    - name: Print haproxy and haproxy-exporter container logs for debugging
+    - name: Print HAProxy container logs for debugging
       command: podman logs {{ container_name }}
       register: haproxy_logs
       ignore_errors: yes
+      tags: debug
 
-    - name: Debug haproxy and haproxy-exporter logs
+    - name: Debug HAProxy logs
       debug:
         var: haproxy_logs.stdout
+      tags: debug
+
+    - name: Verify HAProxy frontend is accessible
+      command: curl -I http://localhost:8073
+      register: haproxy_frontend
+      ignore_errors: yes
+      tags: verify_frontend
+
+    - name: Debug HAProxy frontend access
+      debug:
+        var: haproxy_frontend.stdout
+      tags: debug
+
+    - name: Verify HAProxy stats page is accessible
+      command: curl -I http://localhost:8406/stats
+      register: haproxy_stats
+      ignore_errors: yes
+      tags: verify_stats
+
+    - name: Debug HAProxy stats access
+      debug:
+        var: haproxy_stats.stdout
+      tags: debug
