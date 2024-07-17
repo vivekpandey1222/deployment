@@ -31,21 +31,27 @@
 
   tasks:
         
-    - name: create the direcotry /tmp/prometheus
+    - name: Create the directory /tmp/prometheus
       file:
         path: /tmp/prometheus/
         state: directory
         mode: '0777'
+      tags:
+        - create_directory
 
-    - name: create the config file /tmp/prometheus
+    - name: Create the Prometheus configuration file
       copy:
         content: "{{ prometheus_conf_content }}"
         dest: "{{ prometheus_conf_dest }}"
-        
+      tags:
+        - create_config
+
     - name: Pull Prometheus image
       containers.podman.podman_image:
         name: "{{ prometheus_image }}"
         tag: "latest"
+      tags:
+        - pull_image
 
     - name: Run Prometheus container
       containers.podman.podman_container:
@@ -57,3 +63,18 @@
         volumes:
           - "{{ prometheus_conf_dest }}:{{ prometheus_container_path }}"
           - "{{ prometheus_base }}:{{ prometheus_data }}"
+      tags:
+        - run_container
+
+    - name: Verify Prometheus container is running
+      command: podman ps --filter "name={{ prometheus_container_name }}" --format "{{'{{.Status}}'}}"
+      register: container_status
+      tags:
+        - verify_container
+
+    - name: Verify Prometheus metrics endpoint is accessible
+      command: curl -I http://localhost:9092/metrics
+      register: prometheus_metrics
+      ignore_errors: yes
+      tags:
+        - verify_metrics
