@@ -47,42 +47,50 @@
       file:
         path: /tmp/tomcat2/logs
         state: directory
+      tags: create_directories
 
     - name: Create the /tmp/tomcat2/webapps directory
       file:
         path: /tmp/tomcat2/webapps
         state: directory
+      tags: create_directories
         
     - name: Pull the Tomcat container image
       containers.podman.podman_image:
         name: "{{ tomcat_image }}"
         tag: latest
+      tags: pull_image
 
     - name: Ensure SampleWebApp.war file exists on the controller
       stat:
         path: "{{ war_source_path }}"
       register: war_file
+      tags: check_war
 
     - name: Copy SampleWebApp.war to /tmp directory
       copy:
         src: "{{ war_source_path }}"
         dest: "{{ war_dest_path }}"
+      tags: copy_war
 
     - name: Download JMX Prometheus Java agent JAR
       get_url:
         url: "{{ jmx_agent_url }}"
         dest: "{{ jmx_agent_dest }}"
+      tags: download_jmx
 
     - name: Create setenv.sh for Tomcat
       copy:
         content: "{{ setenv_content }}"
         dest: "{{ setenv_dest }}"
         mode: '0755'
+      tags: configure_tomcat
 
     - name: Create tomcat1.yml for JMX exporter
       copy:
         content: "{{ tomcat_yml_content }}"
         dest: "{{ tomcat_yml_dest }}"
+      tags: configure_tomcat
 
     - name: Run Tomcat container with JMX exporter
       containers.podman.podman_container:
@@ -91,25 +99,31 @@
         state: started
         ports: "{{ tomcat_ports }}"
         volumes: "{{ container_volumes }}"
+      tags: run_container
 
     - name: Verify Tomcat container is running
       command: podman ps --filter "{{ tomcat_status_filter }}" --format "{{'{{.Status}}'}}"
       register: container_status
+      tags: verify_container
 
     - name: Debug container status
       debug:
         var: container_status.stdout
+      tags: debug
 
     - name: Print Tomcat container logs for debugging
       command: podman logs {{ tomcat_container_name }}
       register: tomcat_logs
       ignore_errors: yes
+      tags: debug
 
     - name: Debug Tomcat logs
       debug:
         var: tomcat_logs.stdout
+      tags: debug
 
     - name: Verify sample application is accessible
       uri:
         url: "{{ tomcat_url }}"
         status_code: 200
+      tags: verify_application
