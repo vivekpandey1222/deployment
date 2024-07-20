@@ -1,6 +1,6 @@
 ---
 - name: Deploy Tomcat container and deploy WAR file using Podman
-  hosts: my_servers  
+  hosts: my_servers
   vars:
     tomcat_image: "docker.io/library/tomcat:latest"
     war_source_path: "/home/madhur/SampleWebApp.war"
@@ -38,92 +38,105 @@
       - "{{ setenv_dest }}:/usr/local/tomcat/bin/setenv.sh"
       - "{{ tomcat_yml_dest }}:/usr/local/tomcat/bin/tomcat.yml"
       - "{{ logs_dir }}:/usr/local/tomcat/logs"
-      - "{{ webapps_dir }}:/usr/local/tomcat/webapps" 
+      - "{{ webapps_dir }}:/usr/local/tomcat/webapps"
     tomcat_url: "http://localhost:8075/"
     tomcat_status_filter: "name=tomcat"
 
   tasks:
-    - name: Pull the Tomcat container image
-      containers.podman.podman_image:
-        name: "{{ tomcat_image }}"
-        tag: latest
-      tags: pull_image
-
-    - name: Create a directory /tmp/tomcat if not exists 
-      file:
-        path: /tmp/tomcat/logs
-        state: directory
-      tags: create_directories
-
-    - name: Create a directory webapps for file if not exists
-      file:
-        path: /tmp/tomcat/webapps
-        state: directory
-      tags: create_directories
-
-    - name: Ensure SampleWebApp.war file exists on the controller
-      stat:
-        path: "{{ war_source_path }}"
-      register: war_file
-      tags: check_war
-
-    - name: Copy SampleWebApp.war to /tmp/tomcat directory
-      copy:
-        src: "{{ war_source_path }}"
-        dest: "{{ war_dest_path }}"
-      tags: copy_war
-
-    - name: Download JMX Prometheus Java agent JAR
-      get_url:
-        url: "{{ jmx_agent_url }}"
-        dest: "{{ jmx_agent_dest }}"
-      tags: download_jmx
-
-    - name: Create setenv.sh for Tomcat
-      copy:
-        content: "{{ setenv_content }}"
-        dest: "{{ setenv_dest }}"
-        mode: '0755'
-      tags: configure_tomcat
-
-    - name: Create tomcat.yml for JMX exporter
-      copy:
-        content: "{{ tomcat_yml_content }}"
-        dest: "{{ tomcat_yml_dest }}"
-      tags: configure_tomcat
-
-    - name: Run Tomcat container with JMX exporter
-      containers.podman.podman_container:
-        name: "{{ tomcat_container_name }}"
-        image: "{{ tomcat_image }}"
-        state: started
-        ports: "{{ tomcat_ports }}"
-        volumes: "{{ container_volumes }}"
-      tags: run_container
-
-    - name: Verify Tomcat container is running
-      command: podman ps --filter "{{ tomcat_status_filter }}" --format "{{'{{.Status}}'}}"
-      register: container_status
+    - name: Check if Tomcat container exists
+      command: podman ps -a --filter "{{ tomcat_status_filter }}" --format "{{'{{.Names}}'}}"
+      register: container_check
+      ignore_errors: yes
+      failed_when: false
       tags: verify_container
 
-    - name: Debug container status
-      debug:
-        var: container_status.stdout
-      tags: debug
-
-    - name: Print Tomcat container logs for debugging
-      command: podman logs {{ tomcat_container_name }}
-      register: tomcat_logs
+    - name: Check if Tomcat container is running or stopped
+      command: podman inspect --format "{{ '{{.State.Status}}' }}" {{ tomcat_container_name }}
+      register: container_status
       ignore_errors: yes
-      tags: debug
+      failed_when: false
+      when: container_check.stdout != ''
+      tags: verify_container
 
-    - name: Debug Tomcat logs
-      debug:
-        var: tomcat_logs.stdout
-      tags: debug
+    - name: Start Tomcat container if it exists but is stopped
+      command: podman start {{ tomcat_container_name }}
+      when: container_check.stdout != '' and container_status.stdout != 'running'
+      tags: manage_container
 
-    - name: Verify sample application is accessible
-      uri:
-        url: "{{ tomcat_url }}"
-        status_code: 200
-      tags: verify_application
+    - name: Deploy Tomcat container if it does not exist
+      block:
+        - name: Pull the Tomcat container image
+          containers.podman.podman_image:
+            name: "{{ tomcat_image }}"
+            tag: latest
+          tags: pull_image
+
+        - name: Create a directory /tmp/tomcat if not exists
+          file:
+            path: /tmp/tomcat/logs
+            state: directory
+          tags: create_directories
+
+        - name: Create a directory webapps for file if not exists
+          file:
+            path: /tmp/tomcat/webapps
+            state: directory
+          tags: create_directories
+
+        - name: Ensure SampleWebApp.war file exists on the controller
+          stat:
+            path: "{{ war_source_path }}"
+          register: war_file
+          tags: check_war
+
+        - name: Copy SampleWebApp.war to /tmp/tomcat directory
+          copy:
+            src: "{{ war_source_path }}"
+            dest: "{{ war_dest_path }}"
+          tags: copy_war
+
+        - name: Download JMX Prometheus Java agent JAR
+          get_url:
+            url: "{{ jmx_agent_url }}"
+            dest: "{{ jmx_agent_dest }}"
+          tags: download_jmx
+
+        - name: Create setenv.sh for Tomcat
+          copy:
+            content: "{{ setenv_content }}"
+            dest: "{{ setenv_dest }}"
+            mode: '0755'
+          tags: configure_tomcat
+
+        - name: Create tomcat.yml for JMX exporter
+          copy:
+            content: "{{ tomcat_yml_content }}"
+            dest: "{{ tomcat_yml_dest }}"
+          tags: configure_tomcat
+
+        - name: Run Tomcat container with JMX exporter
+          containers.podman.podman_container:
+            name: "{{ tomcat_container_name }}"
+            image: "{{ tomcat_image }}"
+            state: started
+            ports: "{{ tomcat_ports }}"
+            volumes: "{{ container_volumes }}"
+          tags: run_container
+
+        - name: Verify sample application is accessible
+          uri:
+            url: "{{ tomcat_url }}"
+            status_code: 200
+          tags: verify_application
+
+        - name: Print Tomcat container logs for debugging
+          command: podman logs {{ tomcat_container_name }}
+          register: tomcat_logs
+          ignore_errors: yes
+          tags: debug
+
+        - name: Debug Tomcat logs
+          debug:
+            var: tomcat_logs.stdout
+          tags: debug
+      when: container_check.stdout == ''
