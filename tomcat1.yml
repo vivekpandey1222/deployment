@@ -43,27 +43,24 @@
     tomcat_status_filter: "name=tomcat"
 
   tasks:
-    - name: Check if Tomcat container exists
-      command: podman ps -a --filter "{{ tomcat_status_filter }}" --format "{{'{{.Names}}'}}"
-      register: container_check
-      ignore_errors: yes
-      failed_when: false
-      tags: verify_container
-
-    - name: Check if Tomcat container is running or stopped
-      command: podman inspect --format "{{ '{{.State.Status}}' }}" {{ tomcat_container_name }}
+    - name: Check if Tomcat container is running
+      command: podman ps --filter "{{ tomcat_status_filter }}" --format "{{'{{.Status}}'}}"
       register: container_status
       ignore_errors: yes
       failed_when: false
-      when: container_check.stdout != ''
       tags: verify_container
 
-    - name: Start Tomcat container if it exists but is stopped
-      command: podman start {{ tomcat_container_name }}
-      when: container_check.stdout != '' and container_status.stdout != 'running'
-      tags: manage_container
+    - name: Set fact if Tomcat container is not running
+      set_fact:
+        tomcat_not_running: "{{ container_status.stdout | default('') == '' }}"
+      tags: verify_container
 
-    - name: Deploy Tomcat container if it does not exist
+    - name: Debug container status
+      debug:
+        var: container_status.stdout
+      tags: debug
+
+    - name: Deploy Tomcat if not running
       block:
         - name: Pull the Tomcat container image
           containers.podman.podman_image:
@@ -139,4 +136,4 @@
           debug:
             var: tomcat_logs.stdout
           tags: debug
-      when: container_check.stdout == ''
+      when: tomcat_not_running
