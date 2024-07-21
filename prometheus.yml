@@ -30,41 +30,67 @@
     prometheus_conf_dest: "/tmp/prometheus.yml"
 
   tasks:
-        
-    - name: Create the directory /tmp/prometheus
-      file:
-        path: /tmp/prometheus/
-        state: directory
-        mode: '0777'
-      tags:
-        - create_directory
 
-    - name: Create the Prometheus configuration file
-      copy:
-        content: "{{ prometheus_conf_content }}"
-        dest: "{{ prometheus_conf_dest }}"
-      tags:
-        - create_config
+    - name: Check if Prometheus container exists
+      command: podman ps -a --filter "name={{ prometheus_container_name }}" --format "{{'{{.Status}}'}}"
+      register: container_status
+      ignore_errors: yes
+      failed_when: false
+      tags: verify_container
 
-    - name: Pull Prometheus image
-      containers.podman.podman_image:
-        name: "{{ prometheus_image }}"
-        tag: "latest"
-      tags:
-        - pull_image
+    - name: Set fact if Prometheus container is not running or exists but stopped
+      set_fact:
+        prometheus_not_running: "{{ container_status.stdout is defined and container_status.stdout == '' }}"
+        prometheus_exists_stopped: "{{ container_status.stdout is defined and 'exited' in container_status.stdout | lower }}"
+      tags: verify_container
 
-    - name: Run Prometheus container
-      containers.podman.podman_container:
-        name: "{{ prometheus_container_name }}"
-        image: "{{ prometheus_image }}"
-        state: started
-        ports:
-          - "{{ prometheus_ports }}"
-        volumes:
-          - "{{ prometheus_conf_dest }}:{{ prometheus_container_path }}"
-          - "{{ prometheus_base }}:{{ prometheus_data }}"
-      tags:
-        - run_container
+    - name: Start Prometheus container if it exists but is stopped
+      command: podman start {{ prometheus_container_name }}
+      when: prometheus_exists_stopped
+      tags: start_container
+      register: start_result
+      ignore_errors: yes
+
+    - name: Deploy Prometheus if not running or does not exist
+      block:
+        - name: Create the directory /tmp/prometheus
+          file:
+            path: /tmp/prometheus/
+            state: directory
+            mode: '0777'
+          tags:
+            - create_directory
+          when: prometheus_not_running
+
+        - name: Create the Prometheus configuration file
+          copy:
+            content: "{{ prometheus_conf_content }}"
+            dest: "{{ prometheus_conf_dest }}"
+          tags:
+            - create_config
+          when: prometheus_not_running
+
+        - name: Pull Prometheus image
+          containers.podman.podman_image:
+            name: "{{ prometheus_image }}"
+            tag: "latest"
+          tags:
+            - pull_image
+          when: prometheus_not_running
+
+        - name: Run Prometheus container
+          containers.podman.podman_container:
+            name: "{{ prometheus_container_name }}"
+            image: "{{ prometheus_image }}"
+            state: started
+            ports:
+              - "{{ prometheus_ports }}"
+            volumes:
+              - "{{ prometheus_conf_dest }}:{{ prometheus_container_path }}"
+              - "{{ prometheus_base }}:{{ prometheus_data }}"
+          tags:
+            - run_container
+          when: prometheus_not_running
 
     - name: Verify Prometheus container is running
       command: podman ps --filter "name={{ prometheus_container_name }}" --format "{{'{{.Status}}'}}"
@@ -72,9 +98,21 @@
       tags:
         - verify_container
 
+    - name: Debug container status
+      debug:
+        var: container_status.stdout
+      tags:
+        - debug
+
     - name: Verify Prometheus metrics endpoint is accessible
       command: curl -I http://localhost:9092/metrics
       register: prometheus_metrics
       ignore_errors: yes
       tags:
         - verify_metrics
+
+    - name: Debug Prometheus metrics access
+      debug:
+        var: prometheus_metrics.stdout
+      tags:
+        - debug
