@@ -123,6 +123,6 @@
         - name: Verify sample application is accessible
           uri:
             url: "{{ tomcat_url }}"
-            #status_code: 200
+            status_code: 200
           tags: verify_application
       when: tomcat_not_running
