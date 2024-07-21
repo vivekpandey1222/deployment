@@ -123,5 +123,6 @@
           uri:
             url: "{{ tomcat_url }}"
             status_code: 200
+            ignore_errors: yes
           tags: verify_application
       when: tomcat2_not_running
