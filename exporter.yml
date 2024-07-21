@@ -8,29 +8,53 @@
       - "9103:9101"  # Exporter port
     haproxy_status_filter: "name=haproxy-exporter"
     haproxy_scrape_uri: "http://192.168.122.1:8406/stats;csv"
-    
+
   tasks:
 
-    - name: "Pull the HAProxy-exporter image"
-      containers.podman.podman_image:
-        name: "{{ haproxy_exporter_image }}"
-        tag: "latest"
-      tags:
-        - pull_image
+    - name: Check if HAProxy-exporter container exists
+      command: podman ps -a --filter "name={{ exporter_name }}" --format "{{'{{.Status}}'}}"
+      register: container_status
+      ignore_errors: yes
+      failed_when: false
+      tags: verify_container
 
-    - name: "Run the haproxy-exporter container"
-      containers.podman.podman_container:
-        name: "{{ exporter_name }}"
-        image: "{{ haproxy_exporter_image }}"
-        state: started
-        ports: "{{ exporter_ports }}"
-        command:
-          - "--haproxy.scrape-uri={{ haproxy_scrape_uri }}"
-      tags:
-        - run_container
+    - name: Set fact if HAProxy-exporter container is not running or exists but stopped
+      set_fact:
+        haproxy_exporter_not_running: "{{ container_status.stdout is defined and container_status.stdout == '' }}"
+        haproxy_exporter_exists_stopped: "{{ container_status.stdout is defined and 'exited' in container_status.stdout | lower }}"
+      tags: verify_container
+
+    - name: Start HAProxy-exporter container if it exists but is stopped
+      command: podman start {{ exporter_name }}
+      when: haproxy_exporter_exists_stopped
+      tags: start_container
+      register: start_result
+      ignore_errors: yes
+
+    - name: Deploy HAProxy-exporter if not running or does not exist
+      block:
+        - name: Pull the HAProxy-exporter image
+          containers.podman.podman_image:
+            name: "{{ haproxy_exporter_image }}"
+            tag: "latest"
+          tags:
+            - pull_image
+          when: haproxy_exporter_not_running
+
+        - name: Run the HAProxy-exporter container
+          containers.podman.podman_container:
+            name: "{{ exporter_name }}"
+            image: "{{ haproxy_exporter_image }}"
+            state: started
+            ports: "{{ exporter_ports }}"
+            command:
+              - "--haproxy.scrape-uri={{ haproxy_scrape_uri }}"
+          tags:
+            - run_container
+          when: haproxy_exporter_not_running
 
     - name: Verify HAProxy-exporter container is running
-      command: podman ps --filter "{{ haproxy_status_filter }}" --format "{{'{{.Status}}'}}"
+      command: podman ps --filter "name={{ exporter_name }}" --format "{{'{{.Status}}'}}"
       register: container_status
       tags:
         - verify_container
@@ -43,10 +67,14 @@
       command: podman logs {{ exporter_name }}
       register: haproxy_logs
       ignore_errors: yes
+      tags:
+        - debug
 
     - name: Debug HAProxy-exporter logs
       debug:
         var: haproxy_logs.stdout
+      tags:
+        - debug
 
     - name: Verify HAProxy-exporter metrics endpoint is accessible
       command: curl -I http://localhost:9103/metrics
