@@ -12,34 +12,63 @@
       GF_SECURITY_ADMIN_PASSWORD: "redhat"
 
   tasks:
-    - name: Create the directory /tmp/grafana
-      file:
-        path: /tmp/grafana
-        state: directory
-        mode: '0777'
+    
+    - name: Check if Grafana container exists
+      command: podman ps -a --filter "name={{ grafana_container_name }}" --format "{{'{{.Status}}'}}"
+      register: container_status
+      ignore_errors: yes
+      failed_when: false
       tags:
-        - create_directory
+        - verify_container
 
-    - name: Pull Grafana image
-      containers.podman.podman_image:
-        name: "{{ grafana_image }}"
-        tag: "latest"
+    - name: Set fact if Grafana container is not running or exists but stopped
+      set_fact:
+        grafana_not_running: "{{ container_status.stdout is defined and container_status.stdout == '' }}"
+        grafana_exists_stopped: "{{ container_status.stdout is defined and 'exited' in container_status.stdout | lower }}"
       tags:
-        - pull_image
+        - verify_container
 
-    - name: Run Grafana container
-      containers.podman.podman_container:
-        name: "{{ grafana_container_name }}"
-        image: "{{ grafana_image }}"
-        state: started
-        ports:
-          - "{{ grafana_ports }}"
-        env:
-          "{{ grafana_env | to_json }}"  # Convert dictionary to JSON format
-        volumes:
-          - "{{ grafana_base }}:{{ grafana_data }}"
+    - name: Start Grafana container if it exists but is stopped
+      command: podman start {{ grafana_container_name }}
+      when: grafana_exists_stopped
       tags:
-        - run_container
+        - start_container
+      register: start_result
+      ignore_errors: yes
+
+    - name: Deploy Grafana if not running or does not exist
+      block:
+        - name: Create the directory /tmp/grafana
+          file:
+            path: /tmp/grafana
+            state: directory
+            mode: '0777'
+          tags:
+            - create_directory
+          when: grafana_not_running
+
+        - name: Pull Grafana image
+          containers.podman.podman_image:
+            name: "{{ grafana_image }}"
+            tag: "latest"
+          tags:
+            - pull_image
+          when: grafana_not_running
+
+        - name: Run Grafana container
+          containers.podman.podman_container:
+            name: "{{ grafana_container_name }}"
+            image: "{{ grafana_image }}"
+            state: started
+            ports:
+              - "{{ grafana_ports }}"
+            env:
+              "{{ grafana_env | to_json }}"  # Convert dictionary to JSON format
+            volumes:
+              - "{{ grafana_base }}:{{ grafana_data }}"
+          tags:
+            - run_container
+          when: grafana_not_running
 
     - name: Verify Grafana container is running
       command: podman ps --filter "name={{ grafana_container_name }}" --format "{{'{{.Status}}'}}"
@@ -47,8 +76,14 @@
       tags:
         - verify_container
 
+    - name: Debug container status
+      debug:
+        var: container_status.stdout
+      tags:
+        - debug
+
     - name: Verify Grafana availability with curl
-      command: curl http://localhost:3004/login
+      command: curl  http://localhost:3004/login
       register: grafana_response
       ignore_errors: yes
       tags:
