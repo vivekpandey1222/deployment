@@ -39,7 +39,7 @@
       - "{{ tomcat_yml_dest }}:/usr/local/tomcat/bin/tomcat.yml"
       - "{{ logs_dir }}:/usr/local/tomcat/logs"
       - "{{ webapps_dir }}:/usr/local/tomcat/webapps"
-    tomcat_url: "http://localhost:8075/"
+    tomcat_url: "http://192.168.122.1:8075/"
     tomcat_status_filter: "name=tomcat"
 
   tasks:
