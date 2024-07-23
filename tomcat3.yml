@@ -40,6 +40,7 @@
       - "{{ tomcat_yml_dest }}:/usr/local/tomcat/bin/tomcat.yml"
       - "{{ logs_dir }}:/usr/local/tomcat/logs"
       - "{{ webapps_dir }}:/usr/local/tomcat/webapps"
+      - "{{ war_dest_path }}:/usr/local/tomcat/webapps/ROOT.war"
     tomcat_url: "http://localhost:8075/"
     tomcat_status_filter: "name=tomcat"
 
