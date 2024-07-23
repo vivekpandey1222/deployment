@@ -1,0 +1,60 @@
+---
+- name: Deploy WAR file in Tomcat Container
+  hosts: my_servers
+  vars:
+    war_source_path: "/home/madhur/Lab6A.war"  # Path on the Ansible controller
+    war_dest_path: "/tmp/tomcat/Lab6A.war"  # Path on the target server
+    container_name: "tomcat"  # Name of the container
+    container_webapps_path: "/usr/local/tomcat/webapps"  # Path inside the container
+    war_file_name: "Lab6A.war"  # Name of the WAR file to deploy
+
+  tasks:
+    - name: Ensure WAR file exists on the controller
+      stat:
+        path: "{{ war_source_path }}"
+      register: war_file
+      tags: check_war
+
+        #- name: Fail if WAR file does not exist on the controller
+        #fail:
+        #msg: "The WAR file {{ war_source_path }} does not exist."
+        #when: not war_file.stat.exists
+        #tags: check_war
+
+    - name: Copy WAR file to /tmp directory on target server
+      copy:
+        src: "{{ war_source_path }}"
+        dest: "{{ war_dest_path }}"
+      tags: copy_war
+
+    - name: Check if the WAR file is already deployed in the container
+      command: podman exec {{ container_name }} ls -1 {{ container_webapps_path }}
+      register: deployed_war_status
+      ignore_errors: yes
+      tags: check_deployed
+
+    - name: Set fact with the deployed WAR file name
+      set_fact:
+        deployed_war_name: "{{ deployed_war_status.stdout_lines | select('match', '.*\\.war') | list | first | default('') }}"
+      tags: check_deployed
+
+    - name: Set fact if WAR file is deployed and names match
+      set_fact:
+        is_war_deployed: "{{ deployed_war_name == war_file_name }}"
+      tags: check_deployed
+
+    - name: Deploy WAR file to container if it is not deployed or names do not match
+      command: podman cp "{{ war_dest_path }}" {{ container_name }}:"{{ container_webapps_path }}/{{ war_file_name }}"
+      when: not is_war_deployed
+      tags: deploy_war
+
+    - name: Verify WAR file deployment
+      command: podman exec {{ container_name }} ls -1 {{ container_webapps_path }}
+      register: war_verification_status
+      ignore_errors: yes
+      tags: verify_deployment
+
+    - name: Debug WAR verification result
+      debug:
+        msg: "WAR file deployment status: {{ war_verification_status.stdout }}"
+      tags: verify_deployment
