@@ -1,0 +1,88 @@
+---
+- name: Deploy Basic-Java-CRUD application with MariaDB using Podman
+  hosts: my_servers
+  vars:
+    db_name: "testing"
+    db_user: "root"
+    db_password: "demo"
+    db_host: "localhost"
+    db_port: "3306"
+    tomcat_dir: "/tmp/tomcat"
+    repo_url: "https://github.com/vbg/abdul-tomcat-10-java-crud"
+    repo_dest: "/tmp/java-crud-new"
+    mariadb_container_name: "mariadb"
+  tasks:
+
+    - name: Pull MariaDB image
+      containers.podman.podman_image:
+        name: mariadb
+        tag: latest
+        state: present
+
+    - name: Run MariaDB container
+      containers.podman.podman_container:
+        name: "{{ mariadb_container_name }}"
+        image: mariadb:latest
+        state: started
+        ports:
+          - "3306:3306"
+        env:
+          MYSQL_ROOT_PASSWORD: "{{ db_password }}"
+
+    - name: Wait for MariaDB to be ready
+      wait_for:
+        port: 3306
+        delay: 10
+        timeout: 300
+
+    - name: Create database and users table inside MariaDB container
+      command: >
+        podman exec {{ mariadb_container_name }} mariadb -u{{ db_user }} -p{{ db_password }} -e "
+        CREATE DATABASE IF NOT EXISTS {{ db_name }};
+        USE {{ db_name }};
+        CREATE TABLE IF NOT EXISTS users (
+          userid INT NOT NULL AUTO_INCREMENT,
+          uname VARCHAR(50) NOT NULL,
+          upwd VARCHAR(60) NOT NULL,
+          uemail VARCHAR(30) NOT NULL,
+          umobile VARCHAR(10) NOT NULL,
+          type VARCHAR(5) NOT NULL DEFAULT 'user',
+          PRIMARY KEY(userid)
+        );"
+      ignore_errors: yes
+
+    - name: Clone the repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ repo_dest }}"
+        force: yes
+
+    - name: Update DBConnect.java with database host
+      replace:
+        path: "{{ repo_dest }}/java-crud-new/src/main/java/registration/DBConnect.java"
+        regexp: 'jdbc:mysql://<DB_SERVER_NAME_OR_IP>:<DB_PORT>/<DB_NAME>'
+        replace: "jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}"
+
+    - name: Update DBConnect.java with database user
+      replace:
+        path: "{{ repo_dest }}/java-crud-new/src/main/java/registration/DBConnect.java"
+        regexp: 'root'
+        replace: "{{ db_user }}"
+
+    - name: Update DBConnect.java with database password
+      replace:
+        path: "{{ repo_dest }}/java-crud-new/src/main/java/registration/DBConnect.java"
+        regexp: '<MYSQL_ROOT_PASSWD>'
+        replace: "{{ db_password }}"
+
+    - name: Build the project with Maven
+      command: mvn package
+      args:
+        chdir: "{{ repo_dest }}/java-crud-new"
+
+    - name: Deploy WAR file to Tomcat
+      copy:
+        src: "{{ repo_dest }}/java-crud-new/target/java-crud-new.war"
+        dest: "{{ tomcat_dir }}/webapps/java-crud-new.war"
+        mode: '0644'
+        remote_src: yes
