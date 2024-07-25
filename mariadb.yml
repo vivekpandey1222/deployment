@@ -32,7 +32,7 @@
     - name: Wait for MariaDB to be ready
       wait_for:
         port: 3306
-        delay: 10
+        delay: 30
         timeout: 300
 
           #- name: Wait for MariaDB container to be running
