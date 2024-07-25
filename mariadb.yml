@@ -5,14 +5,14 @@
     db_name: "testing"
     db_user: "root"
     db_password: "demo"
-    db_host: "localhost"
+    db_host: "192.168.122.1"
     db_port: "3306"
     tomcat_dir: "/tmp/tomcat"
     repo_url: "https://github.com/vbg/abdul-tomcat-10-java-crud"
     repo_dest: "/tmp/java-crud-new"
     mariadb_container_name: "mariadb"
-  tasks:
 
+  tasks:
     - name: Pull MariaDB image
       containers.podman.podman_image:
         name: mariadb
@@ -34,6 +34,13 @@
         port: 3306
         delay: 10
         timeout: 300
+
+          #- name: Wait for MariaDB container to be running
+          #command: podman ps --filter "name={{ mariadb_container_name }}" --format "{{.Status}}"
+          #register: mariadb_status
+          #until: "'Up' in mariadb_status.stdout"
+          #retries: 10
+          #delay: 10
 
     - name: Create database and users table inside MariaDB container
       command: >
